@@ -10,63 +10,50 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Checkout repo ────────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. Set up Java (required by Android build tools) ───────────────────
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
 
-      # ── 3. Set up Node ──────────────────────────────────────────────────────
       - name: Set up Node 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # ── 4. Install Capacitor CLI + Android platform ─────────────────────────
       - name: Install dependencies
         run: |
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      # ── 5. Move index.html into www/ (Capacitor requires a real subdirectory) ─
       - name: Prepare web assets
         run: |
           mkdir -p www
           cp index.html www/index.html
 
-      # ── 6. Write capacitor.config.json ──────────────────────────────────────
       - name: Write Capacitor config
         run: |
-          cat > capacitor.config.json << 'EOF'
-          {
-            "appId": "com.hebrewtg.app",
-            "appName": "Hebrew for Tigrinya",
-            "webDir": "www",
-            "bundledWebRuntime": false,
-            "android": {
-              "allowMixedContent": true
-            }
-          }
-          EOF
+          printf '%s\n' \
+            '{' \
+            '  "appId": "com.hebrewtg.app",' \
+            '  "appName": "Hebrew for Tigrinya",' \
+            '  "webDir": "www",' \
+            '  "bundledWebRuntime": false,' \
+            '  "android": { "allowMixedContent": true }' \
+            '}' > capacitor.config.json
 
-      # ── 7. Add Android platform ─────────────────────────────────────────────
       - name: Add Android platform
         run: npx cap add android
 
-      # ── 8. Sync web assets into Android project ─────────────────────────────
       - name: Sync web assets
         run: npx cap sync android
 
-      # ── 9. Accept Android SDK licenses ──────────────────────────────────────
       - name: Accept SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
-      # ── 9. Generate a single-use keystore (ephemeral — not stored anywhere) ─
       - name: Generate ephemeral keystore
         run: |
           keytool -genkeypair \
@@ -79,50 +66,29 @@ jobs:
             -keypass ephemeral123 \
             -dname "CN=HebrewTG, OU=App, O=HebrewTG, L=TLV, S=IL, C=IL"
 
-
-      # ── 10b. Fix Kotlin stdlib duplicate class conflict ───────────────────────
-      - name: Patch Kotlin stdlib duplicates
+      - name: Fix Kotlin stdlib duplicates
         run: |
-          # Exclude legacy jdk7/jdk8 split jars — merged into stdlib since 1.8+
-          cat >> android/build.gradle << 'GRADLE'
+          printf '\nsubprojects {\n    configurations.all {\n        resolutionStrategy { force "org.jetbrains.kotlin:kotlin-stdlib:1.9.10" }\n        exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk7"\n        exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk8"\n    }\n}\n' >> android/build.gradle
 
-subprojects {
-    configurations.all {
-        resolutionStrategy {
-            force "org.jetbrains.kotlin:kotlin-stdlib:1.9.10"
-        }
-        exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk7"
-        exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk8"
-    }
-}
-GRADLE
-
-      # ── 10. Build release APK ────────────────────────────────────────────────
       - name: Build release APK
         working-directory: android
         run: ./gradlew assembleRelease --no-daemon
 
-      # ── 11. Sign the APK with the ephemeral keystore ─────────────────────────
       - name: Sign APK
         run: |
           UNSIGNED=android/app/build/outputs/apk/release/app-release-unsigned.apk
           SIGNED=hebrew-tigrinya-release.apk
-
-          # zipalign first (required before apksigner)
-          $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | tail -1)/zipalign \
-            -v 4 "$UNSIGNED" aligned.apk
-
-          $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | tail -1)/apksigner sign \
+          BUILD_TOOLS=$ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | tail -1)
+          $BUILD_TOOLS/zipalign -v 4 "$UNSIGNED" aligned.apk
+          $BUILD_TOOLS/apksigner sign \
             --ks release.keystore \
             --ks-key-alias release \
             --ks-pass pass:ephemeral123 \
             --key-pass pass:ephemeral123 \
             --out "$SIGNED" \
             aligned.apk
+          echo "APK signed: $SIGNED"
 
-          echo "✅ APK signed: $SIGNED"
-
-      # ── 12. Upload signed APK as workflow artifact ────────────────────────────
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
