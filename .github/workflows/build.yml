@@ -33,14 +33,20 @@ jobs:
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      # ── 5. Write capacitor.config.json ──────────────────────────────────────
+      # ── 5. Move index.html into www/ (Capacitor requires a real subdirectory) ─
+      - name: Prepare web assets
+        run: |
+          mkdir -p www
+          cp index.html www/index.html
+
+      # ── 6. Write capacitor.config.json ──────────────────────────────────────
       - name: Write Capacitor config
         run: |
           cat > capacitor.config.json << 'EOF'
           {
             "appId": "com.hebrewtg.app",
             "appName": "Hebrew for Tigrinya",
-            "webDir": ".",
+            "webDir": "www",
             "bundledWebRuntime": false,
             "android": {
               "allowMixedContent": true
@@ -48,15 +54,15 @@ jobs:
           }
           EOF
 
-      # ── 6. Add Android platform ─────────────────────────────────────────────
+      # ── 7. Add Android platform ─────────────────────────────────────────────
       - name: Add Android platform
         run: npx cap add android
 
-      # ── 7. Copy web assets into Android project ─────────────────────────────
+      # ── 8. Sync web assets into Android project ─────────────────────────────
       - name: Sync web assets
         run: npx cap sync android
 
-      # ── 8. Accept Android SDK licenses ──────────────────────────────────────
+      # ── 9. Accept Android SDK licenses ──────────────────────────────────────
       - name: Accept SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
