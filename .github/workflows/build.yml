@@ -1,0 +1,107 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout repo ────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Set up Java (required by Android build tools) ───────────────────
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # ── 3. Set up Node ──────────────────────────────────────────────────────
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ── 4. Install Capacitor CLI + Android platform ─────────────────────────
+      - name: Install dependencies
+        run: |
+          npm init -y
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+
+      # ── 5. Write capacitor.config.json ──────────────────────────────────────
+      - name: Write Capacitor config
+        run: |
+          cat > capacitor.config.json << 'EOF'
+          {
+            "appId": "com.hebrewtg.app",
+            "appName": "Hebrew for Tigrinya",
+            "webDir": ".",
+            "bundledWebRuntime": false,
+            "android": {
+              "allowMixedContent": true
+            }
+          }
+          EOF
+
+      # ── 6. Add Android platform ─────────────────────────────────────────────
+      - name: Add Android platform
+        run: npx cap add android
+
+      # ── 7. Copy web assets into Android project ─────────────────────────────
+      - name: Sync web assets
+        run: npx cap sync android
+
+      # ── 8. Accept Android SDK licenses ──────────────────────────────────────
+      - name: Accept SDK licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      # ── 9. Generate a single-use keystore (ephemeral — not stored anywhere) ─
+      - name: Generate ephemeral keystore
+        run: |
+          keytool -genkeypair \
+            -alias release \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 1 \
+            -keystore release.keystore \
+            -storepass ephemeral123 \
+            -keypass ephemeral123 \
+            -dname "CN=HebrewTG, OU=App, O=HebrewTG, L=TLV, S=IL, C=IL"
+
+      # ── 10. Build release APK ────────────────────────────────────────────────
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+
+      # ── 11. Sign the APK with the ephemeral keystore ─────────────────────────
+      - name: Sign APK
+        run: |
+          UNSIGNED=android/app/build/outputs/apk/release/app-release-unsigned.apk
+          SIGNED=hebrew-tigrinya-release.apk
+
+          # zipalign first (required before apksigner)
+          $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | tail -1)/zipalign \
+            -v 4 "$UNSIGNED" aligned.apk
+
+          $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | tail -1)/apksigner sign \
+            --ks release.keystore \
+            --ks-key-alias release \
+            --ks-pass pass:ephemeral123 \
+            --key-pass pass:ephemeral123 \
+            --out "$SIGNED" \
+            aligned.apk
+
+          echo "✅ APK signed: $SIGNED"
+
+      # ── 12. Upload signed APK as workflow artifact ────────────────────────────
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hebrew-tigrinya-apk
+          path: hebrew-tigrinya-release.apk
+          retention-days: 7
