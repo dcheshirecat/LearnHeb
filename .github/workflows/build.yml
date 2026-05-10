@@ -79,6 +79,24 @@ jobs:
             -keypass ephemeral123 \
             -dname "CN=HebrewTG, OU=App, O=HebrewTG, L=TLV, S=IL, C=IL"
 
+
+      # ── 10b. Fix Kotlin stdlib duplicate class conflict ───────────────────────
+      - name: Patch Kotlin stdlib duplicates
+        run: |
+          # Exclude legacy jdk7/jdk8 split jars — merged into stdlib since 1.8+
+          cat >> android/build.gradle << 'GRADLE'
+
+subprojects {
+    configurations.all {
+        resolutionStrategy {
+            force "org.jetbrains.kotlin:kotlin-stdlib:1.9.10"
+        }
+        exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk7"
+        exclude group: "org.jetbrains.kotlin", module: "kotlin-stdlib-jdk8"
+    }
+}
+GRADLE
+
       # ── 10. Build release APK ────────────────────────────────────────────────
       - name: Build release APK
         working-directory: android
