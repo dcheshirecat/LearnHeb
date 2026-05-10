@@ -51,6 +51,12 @@ jobs:
       - name: Sync web assets
         run: npx cap sync android
 
+      - name: Allow cleartext traffic for Google TTS
+        run: |
+          mkdir -p android/app/src/main/res/xml
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<network-security-config>\n  <domain-config cleartextTrafficPermitted="true">\n    <domain includeSubdomains="true">translate.googleapis.com</domain>\n  </domain-config>\n  <base-config cleartextTrafficPermitted="false"/>\n</network-security-config>\n' > android/app/src/main/res/xml/network_security_config.xml
+          sed -i 's/android:label="Hebrew for Tigrinya"/android:label="Hebrew for Tigrinya" android:networkSecurityConfig="@xml\/network_security_config"/' android/app/src/main/AndroidManifest.xml || true
+
       - name: Accept SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
