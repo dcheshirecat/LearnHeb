@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm init -y
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/text-to-speech
 
       - name: Prepare web assets
         run: |
@@ -39,7 +39,7 @@ jobs:
           printf '%s\n' \
             '{' \
             '  "appId": "com.hebrewtg.app",' \
-            '  "appName": "Hebrew for Tigrinya",' \
+            '  "appName": "ዕብራይስጥ ተምሃር",' \
             '  "webDir": "www",' \
             '  "bundledWebRuntime": false,' \
             '  "android": { "allowMixedContent": true }' \
@@ -48,14 +48,72 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
-      - name: Sync web assets
+      - name: Sync web assets and TTS plugin
         run: npx cap sync android
 
-      - name: Allow cleartext traffic for Google TTS
+      - name: Set app label to Tigrinya in strings.xml
         run: |
-          mkdir -p android/app/src/main/res/xml
-          printf '<?xml version="1.0" encoding="utf-8"?>\n<network-security-config>\n  <domain-config cleartextTrafficPermitted="true">\n    <domain includeSubdomains="true">translate.googleapis.com</domain>\n  </domain-config>\n  <base-config cleartextTrafficPermitted="false"/>\n</network-security-config>\n' > android/app/src/main/res/xml/network_security_config.xml
-          sed -i 's/android:label="Hebrew for Tigrinya"/android:label="Hebrew for Tigrinya" android:networkSecurityConfig="@xml\/network_security_config"/' android/app/src/main/AndroidManifest.xml || true
+          STRINGS=android/app/src/main/res/values/strings.xml
+          if [ -f "$STRINGS" ]; then
+            sed -i "s|<string name=\"app_name\">.*</string>|<string name=\"app_name\">ዕብራይስጥ ተምሃር</string>|" "$STRINGS"
+          else
+            mkdir -p android/app/src/main/res/values
+            printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="app_name">ዕብራይስጥ ተምሃር</string>\n</resources>\n' > "$STRINGS"
+          fi
+
+      - name: Generate app icon (gold aleph on dark background)
+        run: |
+          pip install Pillow --break-system-packages --quiet
+          python3 - << 'PYEOF'
+          from PIL import Image, ImageDraw, ImageFont
+          import os, shutil
+
+          SIZES = {
+            'mipmap-mdpi':    48,
+            'mipmap-hdpi':    72,
+            'mipmap-xhdpi':   96,
+            'mipmap-xxhdpi':  144,
+            'mipmap-xxxhdpi': 192,
+          }
+          BASE = 'android/app/src/main/res'
+
+          for folder, size in SIZES.items():
+            path = f'{BASE}/{folder}'
+            os.makedirs(path, exist_ok=True)
+            img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+
+            # Rounded rect background (dark)
+            r = size // 5
+            draw.rounded_rectangle([0, 0, size-1, size-1], radius=r, fill=(13, 17, 23, 255))
+
+            # Gold gradient simulation: draw two overlapping rects
+            draw.rounded_rectangle([0, 0, size-1, size//2], radius=r, fill=(240, 165, 0, 255))
+            draw.rounded_rectangle([0, size//2, size-1, size-1], radius=r, fill=(255, 209, 102, 255))
+            # Re-draw corners to keep shape
+            draw.rounded_rectangle([0, 0, size-1, size-1], radius=r, fill=None, outline=(13,17,23,255), width=0)
+
+            # Aleph letter centered
+            font_size = int(size * 0.62)
+            try:
+              font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf', font_size)
+            except:
+              font = ImageFont.load_default()
+
+            letter = '\u05d0'  # Aleph
+            bbox = draw.textbbox((0, 0), letter, font=font)
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
+            x = (size - tw) // 2 - bbox[0]
+            y = (size - th) // 2 - bbox[1]
+            draw.text((x, y), letter, fill=(13, 17, 23, 255), font=font)
+
+            img.save(f'{path}/ic_launcher.png')
+            # Also save round version
+            img.save(f'{path}/ic_launcher_round.png')
+            print(f'  {folder}: {size}x{size}')
+          print('Icons generated.')
+          PYEOF
 
       - name: Accept SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
