@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm init -y
-          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/text-to-speech
+          npm install @capacitor/core @capacitor/cli @capacitor/android
 
       - name: Prepare web assets
         run: |
@@ -48,7 +48,7 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
-      - name: Sync web assets and TTS plugin
+      - name: Sync web assets
         run: npx cap sync android
 
       - name: Set app label to Tigrinya in strings.xml
